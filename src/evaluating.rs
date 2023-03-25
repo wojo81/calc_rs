@@ -1,9 +1,9 @@
 use crate::parsing::*;
 use crate::scanning::*;
 
-pub fn evaluate(yard: &Yard) -> f32 {
+pub fn evaluate(expression: &Vec<Token>) -> f32 {
     let mut slots = Vec::<f32>::new();
-    for token in &yard.expression {
+    for token in expression {
         use TokenKind::*;
         match token.kind {
             number => slots.push(token.content.parse().unwrap()),

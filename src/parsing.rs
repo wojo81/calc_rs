@@ -116,3 +116,26 @@ pub fn function_of(token: &Token) -> BinaryOperation {
         _ => panic!("invalid operator")
     }    
 }
+
+pub fn parse(expression_string: String) -> Vec<Token> {
+    let mut source = StringScanner::new(expression_string);
+
+    let mut is_edge = true;
+    let mut yard = Yard::new();
+
+    while source.is_valid() {
+        let token = source.get_current();
+        if is_edge {
+            if handle_edge(&mut yard, &token) {
+                is_edge = false;
+            }
+        } else {
+            if handle_middle(&mut yard, &token) {
+                is_edge = true;
+            }
+        }
+        source.advance();
+    }
+    yard.finish();
+    yard.expression
+}
