@@ -16,7 +16,7 @@ impl Token {
     }
 }
 
-pub  trait Scanner {
+pub trait Scanner {
     fn get_current(&self) -> Token;
     fn advance(&mut self);
     fn is_valid(&self) -> bool;
@@ -55,7 +55,7 @@ pub struct StringScanner {
 
 fn is_operator(character: char) -> bool {
     match character {
-        '+' | '-' | '*' | '/' => true,
+        '+' | '-' | '*' | '/' | '^' => true,
         _ => false
     }
 }

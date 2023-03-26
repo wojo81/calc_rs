@@ -1,17 +1,15 @@
 use crate::parsing::*;
-use crate::scanning::*;
 
-pub fn evaluate(expression: &Vec<Token>) -> f32 {
+pub fn evaluate(expression: &Vec<ExprNode>) -> f32 {
     let mut slots = Vec::<f32>::new();
-    for token in expression {
-        use TokenKind::*;
-        match token.kind {
-            number => slots.push(token.content.parse().unwrap()),
-            operator => {
+    for node in expression {
+        match node {
+            ExprNode::number(value) => slots.push(*value),
+            ExprNode::operator(Operator::binary(operator)) => {
                 let right = slots.pop().unwrap();
                 let left = *slots.last().unwrap();
 
-                *slots.last_mut().unwrap() = function_of(token)(left, right);
+                *slots.last_mut().unwrap() = operator.call(left, right);
             },
             _ => panic!("wrong token"),
         }
