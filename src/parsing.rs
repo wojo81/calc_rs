@@ -188,62 +188,58 @@ impl Yard {
     }
 }
 
-pub fn handle_edge(yard: &mut Yard, token: &Token) -> bool {
-    use TokenKind::*;
-    match token.kind {
-        number => {
-            yard.add_number(&token.content);
-            true
-        },
-        punctuation => {
-            match token.content.as_str() {
-                "(" => yard.add_left_paren(),
-                ")" => panic!("did not expect ')'"),
-                _ => panic!("unexpected token")
-            }
-            false
-        },
-        _ => panic!("wrong token")
-    }
+struct ParsingStage {
+    process: fn(&mut Yard, Token) -> ParsingStage,
 }
 
-pub fn handle_middle(yard: &mut Yard, token: &Token) -> bool {
-    use TokenKind::*;
-    match token.kind {
-        operator => {
-            yard.add_operator(&token.content, true);
-            true
-        },
-        punctuation => {
-            match token.content.as_str() {
-                ")" => yard.add_right_paren(),
-                "(" => panic!("did not expect '('"),
-                _ => panic!("unexpected token")
+const outer_stage: ParsingStage = ParsingStage {
+    process: |yard, token| {
+        use TokenKind::*;
+        match token.kind {
+            number => {
+                yard.add_number(&token.content);
+                inner_stage
             }
-            false
-        },
-        _ => panic!("wrong token")
-    }
-}
-
-pub fn parse(expression_string: String) -> Vec<ExprNode> {
-    let mut source = StringScanner::new(expression_string);
-
-    let mut is_edge = true;
-    let mut yard = Yard::new();
-
-    while source.is_valid() {
-        let token = source.get_current();
-        if is_edge {
-            if handle_edge(&mut yard, &token) {
-                is_edge = false;
-            }
-        } else {
-            if handle_middle(&mut yard, &token) {
-                is_edge = true;
-            }
+            punctuation => {
+                match token.content.as_str() {
+                    "(" => yard.add_left_paren(),
+                    ")" => panic!("did not expect ')'"),
+                    _ => panic!("unexpected token")
+                }
+                outer_stage
+            },
+            _ => panic!("wrong token")
         }
-        source.advance();
+    }
+};
+
+const inner_stage: ParsingStage = ParsingStage {
+    process: |yard, token| {
+        use TokenKind::*;
+        match token.kind {
+            operator => {
+                yard.add_operator(&token.content, true);
+                outer_stage
+            },
+            punctuation => {
+                match token.content.as_str() {
+                    ")" => yard.add_right_paren(),
+                    "(" => panic!("did not expect '('"),
+                    _ => panic!("unexpected token")
+                }
+                inner_stage
+            },
+            _ => panic!("wrong token")
+        }
+    }
+};
+
+pub fn parse<T: Iterator<Item = Token>>(scanner: T) -> Vec<ExprNode> {
+    let mut yard = Yard::new();
+    let mut stage = outer_stage;
+
+    for token in scanner {
+        stage = (stage.process)(&mut yard, token);
     }
     yard.finish();
     yard.expression

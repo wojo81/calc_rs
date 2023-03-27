@@ -16,40 +16,8 @@ impl Token {
     }
 }
 
-pub trait Scanner {
-    fn get_current(&self) -> Token;
-    fn advance(&mut self);
-    fn is_valid(&self) -> bool;
-}
-
-pub struct SimpleScanner {
-    tokens: Vec<Token>,
-    index: usize,
-}
-
-impl SimpleScanner {
-    fn new(tokens: Vec<Token>) -> Self {
-        Self{tokens, index: 0}
-    }
-}
-
-impl Scanner for SimpleScanner {
-    fn get_current(&self) -> Token {
-        self.tokens[self.index].clone()
-    }
-
-    fn advance(&mut self) {
-        self.index += 1;
-    }
-
-    fn is_valid(&self) -> bool {
-        self.index != self.tokens.len()
-    }
-}
-
 pub struct StringScanner {
     string: String,
-    token: Option<Token>,
     index: usize,
 }
 
@@ -73,25 +41,14 @@ fn is_digit_or_dot(character: char) -> bool {
 
 impl StringScanner {
     pub fn new(string: String) -> Self {
-        let mut source = Self {
+        Self {
             string,
-            token: None,
             index: 0,
-        };
-        source.advance();
-        source
+        }
     }
 
-    fn count<P: Fn(char) -> bool>(&self, predicate: P) -> usize {
-        let mut chars = self.string.chars().skip(self.index);
-        let mut counter = 0;
-        while let Some(c) = chars.next() {
-            if !predicate(c) {
-                break;
-            }
-            counter += 1;
-        }
-        counter
+    fn count_while<P: Fn(char) -> bool>(&self, predicate: P) -> usize {
+        self.view().chars().take_while(|c| predicate(*c)).count()
     }
 
     fn view(&self) -> &str {
@@ -99,12 +56,11 @@ impl StringScanner {
     }
 
     fn skip_whitespace(&mut self) {
-        let count = self.count(char::is_whitespace);
-        self.index += count;
+        self.index += self.count_while(char::is_whitespace);
     }
 
     fn get_number(&self) -> Token {
-        let count = self.count(is_digit_or_dot);
+        let count = self.count_while(is_digit_or_dot);
         Token::new(self.string[self.index..(self.index + count)].into(), TokenKind::number)
     }
 
@@ -127,21 +83,15 @@ impl StringScanner {
     }
 }
 
-impl Scanner for StringScanner {
-    fn get_current(&self) -> Token {
-        self.token.clone().unwrap()
-    }
+impl Iterator for StringScanner {
+    type Item = Token;
 
-    fn advance(&mut self) {
+    fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
         let token = self.get_token();
         if let Some(token) = &token {
             self.index += token.content.len();
         }
-        self.token = token;
-    }
-
-    fn is_valid(&self) -> bool {
-        self.token.is_some()
+        token
     }
 }
