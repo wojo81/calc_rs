@@ -7,7 +7,7 @@ pub enum UnaryOperator {
 }
 
 impl UnaryOperator {
-    fn call(&self, value: f32) -> f32 {
+    pub fn call(&self, value: f32) -> f32 {
         use UnaryOperator::*;
         match self {
             positive => value,
@@ -149,11 +149,16 @@ impl Yard {
 
     fn add_operator(&mut self, content: &str, is_binary: bool) {
         use Operator::*;
+        use Punctuation::*;
 
         let operator;
         if is_binary {
             operator = StackNode::operator(binary(content.parse().unwrap()));
         } else {
+            match self.stack.last() {
+                None | Some(StackNode::punctuation(paren)) => (),
+                _ => panic!("A unary operator can only be used to start an expression or subexpression"),
+            }
             operator = StackNode::operator(unary(content.parse().unwrap()));
         }
 
@@ -199,7 +204,11 @@ const outer_stage: ParsingStage = ParsingStage {
             number => {
                 yard.add_number(&token.content);
                 inner_stage
-            }
+            },
+            operator => {
+                yard.add_operator(&token.content, false);
+                outer_stage
+            },
             punctuation => {
                 match token.content.as_str() {
                     "(" => yard.add_left_paren(),

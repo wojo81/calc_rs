@@ -11,6 +11,10 @@ pub fn evaluate(expression: &Vec<ExprNode>) -> f32 {
 
                 *slots.last_mut().unwrap() = operator.call(left, right);
             },
+            ExprNode::operator(Operator::unary(operator)) => {
+                let value = slots.last().unwrap();
+                *slots.last_mut().unwrap() = operator.call(*value);
+            },
             _ => panic!("wrong token"),
         }
     }
