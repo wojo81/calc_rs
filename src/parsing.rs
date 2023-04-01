@@ -154,18 +154,18 @@ impl Yard {
         let operator;
         if is_binary {
             operator = StackNode::operator(binary(content.parse().unwrap()));
+            let precedence = operator.precedence();
+            while let Some(operator) = self.pop_higher_operator(precedence) {
+                self.expression.push(ExprNode::operator(operator));
+            }
         } else {
             match self.stack.last() {
-                None | Some(StackNode::punctuation(paren)) => (),
-                _ => panic!("A unary operator can only be used to start an expression or subexpression"),
+                None | Some(StackNode::punctuation(paren)) | Some(StackNode::operator(binary(_))) => (),
+                _ => panic!("Cannot have more then two operators next to eachother"),
             }
             operator = StackNode::operator(unary(content.parse().unwrap()));
         }
 
-        let precedence = operator.precedence();
-        while let Some(operator) = self.pop_higher_operator(precedence) {
-            self.expression.push(ExprNode::operator(operator));
-        }
         self.stack.push(operator);
     }
 
