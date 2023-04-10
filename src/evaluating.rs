@@ -15,7 +15,6 @@ pub fn evaluate(expression: &Vec<ExprNode>) -> f32 {
                 let value = slots.last().unwrap();
                 *slots.last_mut().unwrap() = operator.call(*value);
             },
-            _ => panic!("wrong token"),
         }
     }
     *slots.first().unwrap()

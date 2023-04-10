@@ -1,5 +1,6 @@
 #![allow(nonstandard_style)]
 
+mod error_handling;
 mod evaluating;
 mod parsing;
 mod scanning;
@@ -15,9 +16,10 @@ fn main() {
     std::io::stdout().flush().unwrap();
 
     for line in std::io::stdin().lines() {
-        let expression = parse(StringScanner::new(line.unwrap()));
-
-        println!("{}", evaluate(&expression));
+        match parse(StringScanner::new(line.unwrap())) {
+            Ok(expression) => println!("{}", evaluate(&expression)),
+            Err(e) => println!("Error, {}", e.to_string()),
+        }
 
         print!("> ");
         std::io::stdout().flush().unwrap();

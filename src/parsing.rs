@@ -1,3 +1,4 @@
+use crate::error_handling::*;
 use crate::scanning::*;
 use std::str::FromStr;
 
@@ -16,18 +17,15 @@ impl UnaryOperator {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct InvalidOperator;
-
 impl FromStr for UnaryOperator {
-    type Err = InvalidOperator;
+    type Err = CalcError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         use UnaryOperator::*;
         match s {
             "+" => Ok(positive),
             "-" => Ok(negative),
-            _ => Err(InvalidOperator),
+            _ => Err(InvalidOperator::new(s.into()).into()),
         }
     }
 }
@@ -55,9 +53,9 @@ impl BinaryOperator {
 }
 
 impl FromStr for BinaryOperator {
-    type Err = InvalidOperator;
+    type Err = CalcError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         use BinaryOperator::*;
         match s {
             "+" => Ok(addition),
@@ -65,7 +63,7 @@ impl FromStr for BinaryOperator {
             "*" => Ok(multiplication),
             "/" => Ok(division),
             "^" => Ok(exponentiation),
-            _ => Err(InvalidOperator),
+            _ => Err(InvalidOperator::new(s.into()).into()),
         }
     }
 }
@@ -104,19 +102,13 @@ impl StackNode {
 pub enum ExprNode {
     number(f32),
     operator(Operator),
-    punctuation(Punctuation),
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct InvalidNode;
-
-impl TryFrom<StackNode> for ExprNode {
-    type Error = InvalidNode;
-
-    fn try_from(node: StackNode) -> Result<Self, Self::Error> {
+impl From<StackNode> for ExprNode {
+    fn from(node: StackNode) -> Self {
         match node {
-            StackNode::operator(operator) => Ok(ExprNode::operator(operator)),
-            _ => Err(InvalidNode),
+            StackNode::operator(operator) => ExprNode::operator(operator),
+            _ => panic!("stack node could not be converted to an expression node"),
         }
     }
 }
@@ -131,8 +123,10 @@ impl Yard {
         Self{expression: Vec::new(), stack: Vec::new()}
     }
 
-    fn add_number(&mut self, content: &str) {
-        self.expression.push(ExprNode::number(content.parse().unwrap()));
+    fn add_number(&mut self, content: &str) -> Result<()> {
+        self.expression.push(ExprNode::number(content.parse()
+            .map_err(|_| CalcError::from(InvalidNumber::new(content.into())))? ));
+        Ok(())
     }
 
     fn pop_higher_operator(&mut self, precedence: i32) -> Option<Operator> {
@@ -147,13 +141,13 @@ impl Yard {
         }
     }
 
-    fn add_operator(&mut self, content: &str, is_binary: bool) {
+    fn add_operator(&mut self, content: &str, is_binary: bool) -> Result<()> {
         use Operator::*;
         use Punctuation::*;
 
         let operator;
         if is_binary {
-            operator = StackNode::operator(binary(content.parse().unwrap()));
+            operator = StackNode::operator(binary(content.parse()?));
             let precedence = operator.precedence();
             while let Some(operator) = self.pop_higher_operator(precedence) {
                 self.expression.push(ExprNode::operator(operator));
@@ -161,40 +155,42 @@ impl Yard {
         } else {
             match self.stack.last() {
                 None | Some(StackNode::punctuation(paren)) | Some(StackNode::operator(binary(_))) => (),
-                _ => panic!("Cannot have more then two operators next to eachother"),
+                _ => return Err(InvalidOperator::new(content.into()).into()),
             }
-            operator = StackNode::operator(unary(content.parse().unwrap()));
+            operator = StackNode::operator(unary(content.parse()?));
         }
 
         self.stack.push(operator);
+        Ok(())
     }
 
     fn add_left_paren(&mut self) {
         self.stack.push(StackNode::punctuation(Punctuation::paren));
     }
 
-    fn add_right_paren(&mut self) {
+    fn add_right_paren(&mut self) -> Result<()> {
         while let Some(stack_node) = self.stack.pop() {
             if let StackNode::punctuation(Punctuation::paren) = stack_node {
-                return;
+                return Ok(());
             }
             self.expression.push(stack_node.try_into().unwrap());
         }
-        panic!("Could not find matching '('");
+        Err(CouldNotFind::new(")".into()).into())
     }
 
-    pub fn finish(&mut self) {
+    pub fn finish(&mut self) -> Result<()> {
         while let Some(stack_node) = self.stack.pop() {
             if let StackNode::punctuation(Punctuation::paren) = stack_node {
-                panic!("Could not find matching ')'");
+                return Err(CouldNotFind::new("(".into()).into())
             }
             self.expression.push(stack_node.try_into().unwrap());
         }
+        Ok(())
     }
 }
 
 struct ParsingStage {
-    process: fn(&mut Yard, Token) -> ParsingStage,
+    process: fn(&mut Yard, Token) -> Result<ParsingStage>,
 }
 
 const outer_stage: ParsingStage = ParsingStage {
@@ -202,22 +198,21 @@ const outer_stage: ParsingStage = ParsingStage {
         use TokenKind::*;
         match token.kind {
             number => {
-                yard.add_number(&token.content);
-                inner_stage
+                yard.add_number(&token.content)?;
+                Ok(inner_stage)
             },
             operator => {
-                yard.add_operator(&token.content, false);
-                outer_stage
+                yard.add_operator(&token.content, false)?;
+                Ok(outer_stage)
             },
             punctuation => {
                 match token.content.as_str() {
                     "(" => yard.add_left_paren(),
-                    ")" => panic!("did not expect ')'"),
-                    _ => panic!("unexpected token")
+                    _ => return Err(DidNotExpect::new(token.content).into()),
                 }
-                outer_stage
+                Ok(outer_stage)
             },
-            _ => panic!("wrong token")
+            _ => Err(DidNotExpect::new(token.content).into())
         }
     }
 };
@@ -227,29 +222,28 @@ const inner_stage: ParsingStage = ParsingStage {
         use TokenKind::*;
         match token.kind {
             operator => {
-                yard.add_operator(&token.content, true);
-                outer_stage
+                yard.add_operator(&token.content, true)?;
+                Ok(outer_stage)
             },
             punctuation => {
                 match token.content.as_str() {
-                    ")" => yard.add_right_paren(),
-                    "(" => panic!("did not expect '('"),
-                    _ => panic!("unexpected token")
+                    ")" => yard.add_right_paren()?,
+                    _ => return Err(DidNotExpect::new(token.content).into()),
                 }
-                inner_stage
+                Ok(inner_stage)
             },
-            _ => panic!("wrong token")
+            _ => Err(DidNotExpect::new(token.content).into())
         }
     }
 };
 
-pub fn parse<T: Iterator<Item = Token>>(scanner: T) -> Vec<ExprNode> {
+pub fn parse<T: Iterator<Item = Result<Token>>>(scanner: T) -> Result<Vec<ExprNode>> {
     let mut yard = Yard::new();
     let mut stage = outer_stage;
 
     for token in scanner {
-        stage = (stage.process)(&mut yard, token);
+        stage = (stage.process)(&mut yard, token?)?;
     }
-    yard.finish();
-    yard.expression
+    yard.finish()?;
+    Ok(yard.expression)
 }

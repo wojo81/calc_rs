@@ -1,3 +1,4 @@
+use crate::error_handling::*;
 
 #[derive(Clone)]
 pub enum TokenKind {
@@ -68,29 +69,30 @@ impl StringScanner {
         Token::new(self.string[self.index..(self.index + 1)].into(), kind)
     }
 
-    fn get_token(&mut self) -> Option<Token> {
+    fn get_token(&mut self) -> Option<Result<Token>> {
         if self.view().is_empty() {
             None
         } else if self.view().starts_with(char::is_numeric) {
-            Some(self.get_number())
+            Some(Ok(self.get_number()))
         } else if self.view().starts_with(is_operator) {
-            Some(self.get_single(TokenKind::operator))
+            Some(Ok(self.get_single(TokenKind::operator)))
         } else if self.view().starts_with(is_punctuation) {
-            Some(self.get_single(TokenKind::punctuation))
+            Some(Ok(self.get_single(TokenKind::punctuation)))
         } else {
-            panic!("unexpected character encountered")
+            Some(Err(InvalidCharacter::new(self.string.chars().next().unwrap().into()).into()))
         }
     }
 }
 
 impl Iterator for StringScanner {
-    type Item = Token;
+    type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
         let token = self.get_token();
-        if let Some(token) = &token {
-            self.index += token.content.len();
+        match &token {
+            Some(Ok(token)) => self.index += token.content.len(),
+            _ => ()
         }
         token
     }
