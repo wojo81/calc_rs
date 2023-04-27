@@ -4,16 +4,25 @@ pub fn evaluate(expression: &Vec<ExprNode>) -> f32 {
     let mut slots = Vec::<f32>::new();
     for node in expression {
         match node {
-            ExprNode::number(value) => slots.push(*value),
-            ExprNode::operator(Operator::binary(operator)) => {
-                let right = slots.pop().unwrap();
-                let left = *slots.last().unwrap();
+            ExprNode::value(value) => slots.push(*value),
 
-                *slots.last_mut().unwrap() = operator.call(left, right);
+            ExprNode::cast(cast) => {
+                let value = slots.pop().unwrap();
+                slots.push((cast.action)(value));
             },
-            ExprNode::operator(Operator::unary(operator)) => {
-                let value = slots.last().unwrap();
-                *slots.last_mut().unwrap() = operator.call(*value);
+
+            ExprNode::tie(tie) => {
+                let right = slots.pop().unwrap();
+                let left = slots.pop().unwrap();
+                slots.push((tie.action)(left, right));
+            },
+
+            ExprNode::knot(knot) => {
+                let mut arguments = Vec::with_capacity(knot.count as usize);
+                for _ in 0..knot.count {
+                    arguments.push(slots.pop().unwrap());
+                }
+                slots.push((knot.action)(arguments));
             },
         }
     }
