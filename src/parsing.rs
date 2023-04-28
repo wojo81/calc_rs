@@ -1,5 +1,6 @@
 use crate::scanning::*;
 use crate::error_handling::*;
+use std::collections::HashMap;
 
 pub struct Cast {
     pub action: fn(f32) -> f32,
@@ -14,7 +15,6 @@ pub struct Knot {
     pub action: fn(Vec<f32>) -> f32,
 }
 
-#[derive(PartialEq, Eq)]
 enum Precedence {
     low, medium, high,
 }
@@ -35,7 +35,13 @@ impl Precedence {
 #[derive(Clone)]
 enum Function {
     positive, negative,
-    floor, ceil,
+    floor, ceil, round,
+    sin, cos, tan,
+    asin, acos, atan,
+    todeg, torad,
+    log, ln,
+    sqrt, cbrt,
+    abs,
 }
 
 impl Into<ExprNode> for Function {
@@ -45,12 +51,35 @@ impl Into<ExprNode> for Function {
 }
 
 impl Function {
-    fn from_operator(content: &str) -> Result<Function> {
+    fn from_operator(content: &str) -> Result<Self> {
         use Function::*;
         match content {
             "+" => Ok(positive),
             "-" => Ok(negative),
             _ => Err(InvalidOperator::new(content.into()).into())
+        }
+    }
+
+    fn from_identifier(content: &str) -> Option<Self> {
+        use Function::*;
+        match content {
+            "floor" => Some(floor),
+            "ceil" => Some(ceil),
+            "round" => Some(round),
+            "sin" => Some(sin),
+            "cos" => Some(cos),
+            "tan" => Some(tan),
+            "asin" => Some(asin),
+            "acos" => Some(acos),
+            "atan" => Some(atan),
+            "todeg" => Some(todeg),
+            "torad" => Some(torad),
+            "log" => Some(log),
+            "ln" => Some(ln),
+            "sqrt" => Some(sqrt),
+            "cbrt" => Some(cbrt),
+            "abs" => Some(abs),
+            _ => None
         }
     }
 
@@ -61,11 +90,28 @@ impl Function {
             negative => |n| -n,
             floor => f32::floor,
             ceil => f32::ceil,
+            round => f32::round,
+            sin => f32::sin,
+            cos => f32::cos,
+            tan => f32::tan,
+            asin => f32::asin,
+            acos => f32::acos,
+            atan => f32::atan,
+            todeg => f32::to_degrees,
+            torad => f32::to_radians,
+            log => f32::log10,
+            ln => f32::ln,
+            sqrt => f32::sqrt,
+            cbrt => f32::cbrt,
+            abs => f32::abs,
         }
     }
 
     fn precedence(&self) -> Precedence {
-        Precedence::low
+        match self {
+            Self::positive | Self::negative => Precedence::low,
+            _ => Precedence::high,
+        }
     }
 
     fn preceding(&self, precedence: &Precedence) -> Option<ExprNode> {
@@ -134,7 +180,7 @@ impl BinaryFunction {
 }
 
 enum VariedFunction {
-    min, max,
+    min, max, avg,
 }
 
 pub enum ExprNode {
@@ -258,6 +304,26 @@ const operator_binding: Rule = Rule {
     }
 };
 
+const identifier_placing: Rule = Rule {
+    cause: |token| {
+        if let TokenKind::identifier = token.kind {
+            true
+        } else {
+            false
+        }
+    },
+    effect: |context, feeder, token| {
+        if let Some(constant) = context.constants.get(&token.content) {
+            context.active_ruleset = ActiveRuleset::binding;
+            Ok(feeder.expression.push(ExprNode::value(*constant)))
+        } else if let Some(function) = Function::from_identifier(&token.content) {
+            Ok(feeder.stack.push(StackNode::function(function)))
+        } else {
+            Err(Undefined::new(token.content.clone()).into())
+        }
+    }
+};
+
 impl Ruleset {
     fn placing() -> Self {
         Self {
@@ -266,6 +332,7 @@ impl Ruleset {
                     value_placing,
                     operator_placing,
                     paren_placing,
+                    identifier_placing,
                 ]
             ]
         }
@@ -308,8 +375,16 @@ struct Context {
     placing: Ruleset,
     binding: Ruleset,
     active_ruleset: ActiveRuleset,
+    constants: HashMap<String, f32>,
     is_nested: bool,
     is_list: bool,
+}
+
+fn create_constants() -> HashMap<String, f32> {
+    HashMap::from([
+        ("pi".into(), std::f32::consts::PI),
+        ("e".into(), std::f32::consts::E)
+    ])
 }
 
 impl Context {
@@ -318,6 +393,7 @@ impl Context {
             placing: Ruleset::placing(),
             binding: Ruleset::binding(),
             active_ruleset: ActiveRuleset::placing,
+            constants: create_constants(),
             is_nested: false,
             is_list: false,
         }

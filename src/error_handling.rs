@@ -4,6 +4,7 @@ pub enum CalcError {
     operator(InvalidOperator),
     did_not_expect(DidNotExpect),
     could_not_find(CouldNotFind),
+    undefined(Undefined)
 }
 
 impl ToString for CalcError {
@@ -15,11 +16,13 @@ impl ToString for CalcError {
             operator(e) => e.to_string(),
             did_not_expect(e) => e.to_string(),
             could_not_find(e) => e.to_string(),
+            undefined(e) => e.to_string(),
         }
     }
 }
 
 pub type Result<T> = std::result::Result<T, CalcError>;
+
 
 pub struct InvalidCharacter {
     content: String,
@@ -36,6 +39,7 @@ impl ToString for InvalidCharacter {
         format!("invalid character, '{}', encountered", self.content)
     }
 }
+
 
 pub struct InvalidNumber {
     content: String,
@@ -105,6 +109,29 @@ impl ToString for CouldNotFind {
 }
 
 
+pub struct Undefined {
+    identifier: String,
+}
+
+impl Undefined {
+    pub fn new(identifier: String) -> Self {
+        Self{identifier}
+    }
+}
+
+impl ToString for Undefined {
+    fn to_string(&self) -> String {
+        format!("identifier, '{}', is not defined", self.identifier)
+    }
+}
+
+
+impl From<InvalidCharacter> for CalcError {
+    fn from(e: InvalidCharacter) -> Self {
+        CalcError::character(e)
+    }
+}
+
 impl From<InvalidNumber> for CalcError {
     fn from(e: InvalidNumber) -> Self {
         CalcError::number(e)
@@ -117,12 +144,6 @@ impl From<InvalidOperator> for CalcError {
     }
 }
 
-impl From<InvalidCharacter> for CalcError {
-    fn from(e: InvalidCharacter) -> Self {
-        CalcError::character(e)
-    }
-}
-
 impl From<DidNotExpect> for CalcError {
     fn from(e: DidNotExpect) -> Self {
         CalcError::did_not_expect(e)
@@ -132,5 +153,11 @@ impl From<DidNotExpect> for CalcError {
 impl From<CouldNotFind> for CalcError {
     fn from(e: CouldNotFind) -> Self {
         CalcError::could_not_find(e)
+    }
+}
+
+impl From<Undefined> for CalcError {
+    fn from(e: Undefined) -> Self {
+        CalcError::undefined(e)
     }
 }

@@ -65,6 +65,11 @@ impl StringScanner {
         Token::new(self.string[self.index..(self.index + count)].into(), TokenKind::number)
     }
 
+    fn get_identifier(&self) -> Token {
+        let count = self.count_while(char::is_alphabetic);
+        Token::new(self.string[self.index..(self.index + count)].into(), TokenKind::identifier)
+    }
+
     fn get_single(&self, kind: TokenKind) -> Token {
         Token::new(self.string[self.index..(self.index + 1)].into(), kind)
     }
@@ -78,6 +83,8 @@ impl StringScanner {
             Some(Ok(self.get_single(TokenKind::operator)))
         } else if self.view().starts_with(is_punctuation) {
             Some(Ok(self.get_single(TokenKind::punctuation)))
+        } else if self.view().starts_with(char::is_alphabetic) {
+            Some(Ok(self.get_identifier()))
         } else {
             Some(Err(InvalidCharacter::new(self.string.chars().next().unwrap().into()).into()))
         }
