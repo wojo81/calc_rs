@@ -60,31 +60,59 @@ impl StringScanner {
         self.index += self.count_while(char::is_whitespace);
     }
 
-    fn get_number(&self) -> Token {
-        let count = self.count_while(is_digit_or_dot);
-        Token::new(self.string[self.index..(self.index + count)].into(), TokenKind::number)
+    fn slice_while(&mut self, predicate: fn(char) -> bool) -> String {
+        let count = self.count_while(predicate);
+        let slice = self.view()[..count].to_string();
+        self.index += count;
+        slice
     }
 
-    fn get_identifier(&self) -> Token {
-        let count = self.count_while(char::is_alphabetic);
-        Token::new(self.string[self.index..(self.index + count)].into(), TokenKind::identifier)
+    fn slice_many_as(&mut self, predicate: fn(char) -> bool, kind: TokenKind) -> Option<Token> {
+        let slice = self.slice_while(predicate);
+        if slice.is_empty() {
+            None
+        } else {
+            Some(Token::new(slice, kind))
+        }
     }
 
-    fn get_single(&self, kind: TokenKind) -> Token {
-        Token::new(self.string[self.index..(self.index + 1)].into(), kind)
+    fn slice_once_as(&mut self, predicate: fn(char) -> bool, kind: TokenKind) -> Option<Token> {
+        if self.view().starts_with(predicate) {
+            let slice = self.view()[..1].to_string();
+            self.index += 1;
+            Some(Token::new(slice, kind))
+        } else {
+            None
+        }
     }
 
-    fn get_token(&mut self) -> Option<Result<Token>> {
+    fn peel_number(&mut self) -> Option<Token> {
+        self.slice_many_as(is_digit_or_dot, TokenKind::number)
+    }
+
+    fn peel_operator(&mut self) -> Option<Token> {
+        self.slice_once_as(is_operator, TokenKind::operator)
+    }
+
+    fn peel_punctuation(&mut self) -> Option<Token> {
+        self.slice_once_as(is_punctuation, TokenKind::punctuation)
+    }
+
+    fn peel_identifier(&mut self) -> Option<Token> {
+        self.slice_many_as(char::is_alphabetic, TokenKind::identifier)
+    }
+
+    fn peel(&mut self) -> Option<Result<Token>> {
         if self.view().is_empty() {
             None
-        } else if self.view().starts_with(char::is_numeric) {
-            Some(Ok(self.get_number()))
-        } else if self.view().starts_with(is_operator) {
-            Some(Ok(self.get_single(TokenKind::operator)))
-        } else if self.view().starts_with(is_punctuation) {
-            Some(Ok(self.get_single(TokenKind::punctuation)))
-        } else if self.view().starts_with(char::is_alphabetic) {
-            Some(Ok(self.get_identifier()))
+        } else if let Some(token) = self.peel_number() {
+            Some(Ok(token))
+        } else if let Some(token) = self.peel_operator() {
+            Some(Ok(token))
+        } else if let Some(token) = self.peel_punctuation() {
+            Some(Ok(token))
+        } else if let Some(token) = self.peel_identifier() {
+            Some(Ok(token))
         } else {
             Some(Err(InvalidCharacter::new(self.string.chars().next().unwrap().into()).into()))
         }
@@ -96,11 +124,6 @@ impl Iterator for StringScanner {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
-        let token = self.get_token();
-        match &token {
-            Some(Ok(token)) => self.index += token.content.len(),
-            _ => ()
-        }
-        token
+        self.peel()
     }
 }
