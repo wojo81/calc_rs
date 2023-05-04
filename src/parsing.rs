@@ -11,8 +11,8 @@ pub struct Tie {
 }
 
 pub struct Knot {
-    pub count: u32,
     pub action: fn(Vec<f32>) -> f32,
+    pub count: u32,
 }
 
 enum Precedence {
@@ -137,7 +137,7 @@ impl Into<ExprNode> for BinaryFunction {
 }
 
 impl BinaryFunction {
-    fn from_operator(content: &str) -> Result<BinaryFunction> {
+    fn from_operator(content: &str) -> Result<Self> {
         use BinaryFunction::*;
 
         match content {
@@ -183,6 +183,27 @@ enum VariedFunction {
     min, max, avg,
 }
 
+impl VariedFunction {
+    fn from_identifier(content: &str) -> Option<Self> {
+        use VariedFunction::*;
+        match content {
+            "min" => Some(min),
+            "max" => Some(max),
+            "avg" => Some(avg),
+            _ => None
+        }
+    }
+
+    fn call(self) -> fn(Vec<f32>) -> f32 {
+        use VariedFunction::*;
+        match self {
+            min => |values| values.iter().fold(f32::MAX, |a, b| a.min(*b)),
+            max => |values| values.iter().fold(f32::MIN, |a, b| a.max(*b)),
+            avg => |values| values.iter().sum::<f32>() / values.len() as f32,
+        }
+    }
+}
+
 pub enum ExprNode {
     value(f32),
     cast(Cast),
@@ -190,11 +211,17 @@ pub enum ExprNode {
     knot(Knot),
 }
 
+impl ExprNode {
+    fn varied(function: VariedFunction, count: u32) -> Self {
+        Self::knot(Knot {action: function.call(), count})
+    }
+}
+
 enum StackNode {
     function(Function),
     binary_function(BinaryFunction),
-    varied_function(VariedFunction),
-    section { is_nested: bool, is_argument: bool },
+    varied_function(VariedFunction, u32),
+    section(Enclosure)
 }
 
 type Cause = fn(&Token) -> bool;
@@ -254,10 +281,8 @@ const paren_placing: Rule = Rule {
         token.content == "("
     },
     effect: |context, feeder, _token| {
-        context.binding.push(vec![paren_binding]);
-        feeder.stack.push(StackNode::section {is_nested: context.is_nested, is_argument: context.is_list});
-        context.is_nested = true;
-        context.is_list = false;
+        feeder.stack.push(StackNode::section(context.enclosure.clone()));
+        context.enclose(Enclosure::nested);
         Ok(())
     }
 };
@@ -269,11 +294,8 @@ const paren_binding: Rule = Rule {
     effect: |context, feeder, _token| {
         while let Some(node) = feeder.stack.pop() {
             match node {
-                StackNode::section { is_nested, is_argument: is_list } => {
-                    if !is_nested {
-                        context.is_nested = false;
-                        context.binding.reset();
-                    }
+                StackNode::section(enclosure) => {
+                    context.enclose(enclosure);
                     break;
                 },
                 StackNode::function(node)  => feeder.expression.push(node.into()),
@@ -318,9 +340,74 @@ const identifier_placing: Rule = Rule {
             Ok(feeder.expression.push(ExprNode::value(*constant)))
         } else if let Some(function) = Function::from_identifier(&token.content) {
             Ok(feeder.stack.push(StackNode::function(function)))
+        } else if let Some(function) = VariedFunction::from_identifier(&token.content) {
+            context.placing.push(vec![list_placing]);
+            Ok(feeder.stack.push(StackNode::varied_function(function, 0)))
         } else {
             Err(Undefined::new(token.content.clone()).into())
         }
+    }
+};
+
+const list_placing: Rule = Rule {
+    cause: |token| {
+        true
+    },
+    effect: |context, feeder, token| {
+        if token.content != "(" {
+            Err(DidNotExpect::new(token.content.clone()).into())
+        } else {
+            context.placing.reset();
+            feeder.stack.push(StackNode::section(context.enclosure.clone()));
+            context.enclose(Enclosure::listed);
+            Ok(())
+        }
+    }
+};
+
+const arg_binding: Rule = Rule {
+    cause: |token| {
+        token.content == ","
+    },
+    effect: |context, feeder, token| {
+        context.active_ruleset = ActiveRuleset::placing;
+        while let Some(node) = feeder.stack.pop() {
+            match node {
+                StackNode::section(enclosure) => {
+                    if let Some(StackNode::varied_function(function, count)) = feeder.stack.pop() {
+                        feeder.stack.push(StackNode::varied_function(function, count + 1));
+                        feeder.stack.push(StackNode::section(enclosure));
+                    }
+                    break;
+                },
+                StackNode::function(node)  => feeder.expression.push(node.into()),
+                StackNode::binary_function(node) => feeder.expression.push(node.into()),
+                _ => (),
+            }
+        }
+        Ok(())
+    }
+};
+
+const list_binding: Rule = Rule {
+    cause: |token| {
+        token.content == ")"
+    },
+    effect: |context, feeder, token| {
+        while let Some(node) = feeder.stack.pop() {
+            match node {
+                StackNode::section(_) => {
+                    if let Some(StackNode::varied_function(function, count)) = feeder.stack.pop() {
+                        feeder.expression.push(ExprNode::varied(function, count + 1));
+                    }
+                    break;
+                },
+                StackNode::function(node)  => feeder.expression.push(node.into()),
+                StackNode::binary_function(node) => feeder.expression.push(node.into()),
+                _ => (),
+            }
+        }
+        Ok(())
     }
 };
 
@@ -371,13 +458,17 @@ enum ActiveRuleset {
     placing, binding,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+enum Enclosure {
+    open, nested, listed
+}
+
 struct Context {
     placing: Ruleset,
     binding: Ruleset,
     active_ruleset: ActiveRuleset,
     constants: HashMap<String, f32>,
-    is_nested: bool,
-    is_list: bool,
+    enclosure: Enclosure,
 }
 
 fn create_constants() -> HashMap<String, f32> {
@@ -394,8 +485,7 @@ impl Context {
             binding: Ruleset::binding(),
             active_ruleset: ActiveRuleset::placing,
             constants: create_constants(),
-            is_nested: false,
-            is_list: false,
+            enclosure: Enclosure::open,
         }
     }
 
@@ -406,6 +496,19 @@ impl Context {
         }?;
 
         effect(self, yard, &token)
+    }
+
+    fn enclose(&mut self, enclosure: Enclosure) {
+        if self.enclosure != enclosure {
+            self.placing.reset();
+            self.binding.reset();
+            if enclosure == Enclosure::nested {
+                self.binding.push(vec![paren_binding])
+            } else if enclosure == Enclosure::listed {
+                self.binding.push(vec![arg_binding, list_binding])
+            }
+            self.enclosure = enclosure;
+        }
     }
 }
 

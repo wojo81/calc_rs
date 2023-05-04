@@ -31,7 +31,7 @@ fn is_operator(character: char) -> bool {
 
 fn is_punctuation(character: char) -> bool {
     match character {
-        '(' | ')' => true,
+        '(' | ')' | ',' => true,
         _ => false
     }
 }
@@ -114,7 +114,7 @@ impl StringScanner {
         } else if let Some(token) = self.peel_identifier() {
             Some(Ok(token))
         } else {
-            Some(Err(InvalidCharacter::new(self.string.chars().next().unwrap().into()).into()))
+            Some(Err(InvalidCharacter::new(self.view().chars().next().unwrap().into()).into()))
         }
     }
 }
