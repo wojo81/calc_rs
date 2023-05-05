@@ -1,6 +1,6 @@
 use crate::error_handling::*;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TokenKind {
     identifier, number, operator, punctuation
 }

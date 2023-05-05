@@ -242,10 +242,6 @@ impl Rule {
     }
 }
 
-struct Ruleset {
-    rules: Vec<Vec<Rule>>,
-}
-
 const value_placing: Rule = Rule {
     cause: |token| {
         if let TokenKind::number = token.kind {
@@ -264,11 +260,7 @@ const value_placing: Rule = Rule {
 
 const operator_placing: Rule = Rule {
     cause: |token| {
-        if let TokenKind::operator = token.kind {
-            true
-        } else {
-            false
-        }
+        token.kind == TokenKind::operator
     },
     effect: |_context, feeder, token| {
         let operator = Function::from_operator(&token.content)?;
@@ -309,11 +301,7 @@ const paren_binding: Rule = Rule {
 
 const operator_binding: Rule = Rule {
     cause: |token| {
-        if let TokenKind::operator = token.kind {
-            true
-        } else {
-            false
-        }
+        token.kind == TokenKind::operator
     },
     effect: |context, feeder, token| {
         context.active_ruleset = ActiveRuleset::placing;
@@ -328,11 +316,7 @@ const operator_binding: Rule = Rule {
 
 const identifier_placing: Rule = Rule {
     cause: |token| {
-        if let TokenKind::identifier = token.kind {
-            true
-        } else {
-            false
-        }
+        token.kind == TokenKind::identifier
     },
     effect: |context, feeder, token| {
         if let Some(constant) = context.constants.get(&token.content) {
@@ -358,9 +342,8 @@ const list_placing: Rule = Rule {
             Err(CalcError::did_not_expect(token.content.clone()))
         } else {
             context.placing.reset();
-            feeder.stack.push(StackNode::section(context.enclosure.clone()));
             context.enclose(Enclosure::listed);
-            Ok(())
+            Ok(feeder.stack.push(StackNode::section(context.enclosure.clone())))
         }
     }
 };
@@ -411,6 +394,10 @@ const list_binding: Rule = Rule {
     }
 };
 
+struct Ruleset {
+    rules: Vec<Vec<Rule>>,
+}
+
 impl Ruleset {
     fn placing() -> Self {
         Self {
@@ -453,7 +440,7 @@ impl Ruleset {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 enum ActiveRuleset {
     placing, binding,
 }
@@ -547,7 +534,7 @@ impl Yard {
     }
 
     pub fn finalize(&mut self, context: &Context) -> Result<()> {
-        if let ActiveRuleset::placing = context.active_ruleset {
+        if context.active_ruleset == ActiveRuleset::placing {
             return Err(CalcError::abrupt_end);
         }
         while let Some(node) = self.stack.pop() {
