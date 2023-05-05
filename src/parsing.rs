@@ -350,7 +350,7 @@ const identifier_placing: Rule = Rule {
 };
 
 const list_placing: Rule = Rule {
-    cause: |token| {
+    cause: |_token| {
         true
     },
     effect: |context, feeder, token| {
@@ -369,7 +369,7 @@ const arg_binding: Rule = Rule {
     cause: |token| {
         token.content == ","
     },
-    effect: |context, feeder, token| {
+    effect: |context, feeder, _token| {
         context.active_ruleset = ActiveRuleset::placing;
         while let Some(node) = feeder.stack.pop() {
             match node {
@@ -393,7 +393,7 @@ const list_binding: Rule = Rule {
     cause: |token| {
         token.content == ")"
     },
-    effect: |context, feeder, token| {
+    effect: |_context, feeder, _token| {
         while let Some(node) = feeder.stack.pop() {
             match node {
                 StackNode::section(_) => {
