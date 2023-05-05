@@ -56,7 +56,7 @@ impl Function {
         match content {
             "+" => Ok(positive),
             "-" => Ok(negative),
-            _ => Err(InvalidOperator::new(content.into()).into())
+            _ => Err(CalcError::invalid_operator(content.into()))
         }
     }
 
@@ -146,7 +146,7 @@ impl BinaryFunction {
             "*" => Ok(multiplication),
             "/" => Ok(division),
             "^" => Ok(exponentiation),
-            _ => Err(InvalidOperator::new(content.into()).into())
+            _ => Err(CalcError::invalid_operator(content.into()))
         }
     }
 
@@ -257,7 +257,7 @@ const value_placing: Rule = Rule {
     effect: |context, feeder, token| {
         context.active_ruleset = ActiveRuleset::binding;
         feeder.expression.push(ExprNode::value(token.content.parse()
-            .map_err(|_| CalcError::from(InvalidNumber::new(token.content.clone())))? ));
+            .map_err(|_| CalcError::invalid_number(token.content.clone()))? ));
         Ok(())
     }
 };
@@ -344,7 +344,7 @@ const identifier_placing: Rule = Rule {
             context.placing.push(vec![list_placing]);
             Ok(feeder.stack.push(StackNode::varied_function(function, 0)))
         } else {
-            Err(Undefined::new(token.content.clone()).into())
+            Err(CalcError::undefined(token.content.clone()))
         }
     }
 };
@@ -355,7 +355,7 @@ const list_placing: Rule = Rule {
     },
     effect: |context, feeder, token| {
         if token.content != "(" {
-            Err(DidNotExpect::new(token.content.clone()).into())
+            Err(CalcError::did_not_expect(token.content.clone()))
         } else {
             context.placing.reset();
             feeder.stack.push(StackNode::section(context.enclosure.clone()));
@@ -441,7 +441,7 @@ impl Ruleset {
                 return Ok(effect);
             }
         }
-        Err(DidNotExpect::new(token.content.clone().into()).into())
+        Err(CalcError::did_not_expect(token.content.clone().into()))
     }
 
     fn reset(&mut self) {
@@ -546,10 +546,13 @@ impl Yard {
         }
     }
 
-    pub fn finalize(&mut self) -> Result<()> {
+    pub fn finalize(&mut self, context: &Context) -> Result<()> {
+        if let ActiveRuleset::placing = context.active_ruleset {
+            return Err(CalcError::abrupt_end);
+        }
         while let Some(node) = self.stack.pop() {
             match node {
-                StackNode::section{..} => return Err(CouldNotFind::new(")".into()).into()),
+                StackNode::section{..} => return Err(CalcError::could_not_find(")".into())),
                 StackNode::function(function) => self.expression.push(function.into()),
                 StackNode::binary_function(function) => self.expression.push(function.into()),
                 _ => panic!("temporary")
@@ -566,7 +569,7 @@ pub fn parse<T: Iterator<Item = Result<Token>>>(scanner: T) -> Result<Vec<ExprNo
     for token in scanner {
         context.apply(&mut yard, token?)?;
     }
-    yard.finalize()?;
+    yard.finalize(&context)?;
 
     Ok(yard.expression)
 }

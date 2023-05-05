@@ -42,10 +42,12 @@ fn is_digit_or_dot(character: char) -> bool {
 
 impl StringScanner {
     pub fn new(string: String) -> Self {
-        Self {
+        let mut scanner = Self {
             string,
             index: 0,
-        }
+        };
+        scanner.skip_whitespace();
+        scanner
     }
 
     fn count_while<P: Fn(char) -> bool>(&self, predicate: P) -> usize {
@@ -102,8 +104,12 @@ impl StringScanner {
         self.slice_many_as(char::is_alphabetic, TokenKind::identifier)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.view().is_empty()
+    }
+
     fn peel(&mut self) -> Option<Result<Token>> {
-        if self.view().is_empty() {
+        if self.is_empty() {
             None
         } else if let Some(token) = self.peel_number() {
             Some(Ok(token))
@@ -114,7 +120,7 @@ impl StringScanner {
         } else if let Some(token) = self.peel_identifier() {
             Some(Ok(token))
         } else {
-            Some(Err(InvalidCharacter::new(self.view().chars().next().unwrap().into()).into()))
+            Some(Err(CalcError::invalid_character(self.view().chars().next().unwrap().into())))
         }
     }
 }
@@ -123,7 +129,8 @@ impl Iterator for StringScanner {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let peeling = self.peel();
         self.skip_whitespace();
-        self.peel()
+        peeling
     }
 }

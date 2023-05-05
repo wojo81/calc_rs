@@ -16,7 +16,13 @@ fn main() {
     std::io::stdout().flush().unwrap();
 
     for line in std::io::stdin().lines() {
-        match parse(StringScanner::new(line.unwrap())) {
+        let scanner = StringScanner::new(line.unwrap());
+
+        if scanner.is_empty() {
+            break;
+        }
+
+        match parse(scanner) {
             Ok(expression) => println!("{}", evaluate(&expression)),
             Err(e) => println!("Error, {}", e.to_string()),
         }
