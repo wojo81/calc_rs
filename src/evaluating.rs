@@ -1,6 +1,8 @@
 use crate::parsing::*;
 
-pub fn evaluate(expression: &Vec<ExprNode>) -> f32 {
+use std::collections::HashMap;
+
+pub fn evaluate(expression: &Vec<ExprNode>, variables: &mut HashMap<String, f32>) -> f32 {
     let mut slots = Vec::<f32>::new();
     for node in expression {
         match node {
@@ -23,6 +25,10 @@ pub fn evaluate(expression: &Vec<ExprNode>) -> f32 {
                     arguments.push(slots.pop().unwrap());
                 }
                 slots.push((knot.action)(arguments));
+            },
+
+            ExprNode::assign(identifier) => {
+                variables.insert(identifier.clone(), *slots.first().unwrap());
             },
         }
     }

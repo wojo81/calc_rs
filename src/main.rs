@@ -9,11 +9,15 @@ use evaluating::*;
 use parsing::*;
 use scanning::*;
 
+use std::collections::HashMap;
+
 fn main() {
     use std::io::Write;
 
     print!("> ");
     std::io::stdout().flush().unwrap();
+
+    let mut variables = HashMap::<String, f32>::new();
 
     for line in std::io::stdin().lines() {
         let scanner = StringScanner::new(line.unwrap());
@@ -22,8 +26,8 @@ fn main() {
             break;
         }
 
-        match parse(scanner) {
-            Ok(expression) => println!("{}", evaluate(&expression)),
+        match parse(scanner, &mut variables) {
+            Ok(expression) => println!("{}", evaluate(&expression, &mut variables)),
             Err(e) => println!("Error, {}", e.to_string()),
         }
 

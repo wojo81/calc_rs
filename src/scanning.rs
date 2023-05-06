@@ -24,7 +24,7 @@ pub struct StringScanner {
 
 fn is_operator(character: char) -> bool {
     match character {
-        '+' | '-' | '*' | '/' | '^' => true,
+        '+' | '-' | '*' | '/' | '^' | '=' => true,
         _ => false
     }
 }

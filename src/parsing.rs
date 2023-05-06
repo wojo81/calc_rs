@@ -209,6 +209,7 @@ pub enum ExprNode {
     cast(Cast),
     tie(Tie),
     knot(Knot),
+    assign(String),
 }
 
 impl ExprNode {
@@ -221,7 +222,9 @@ enum StackNode {
     function(Function),
     binary_function(BinaryFunction),
     varied_function(VariedFunction, u32),
-    section(Enclosure)
+    section(Enclosure),
+    variable(String),
+    assign(String),
 }
 
 type Cause = fn(&Token) -> bool;
@@ -250,9 +253,9 @@ const value_placing: Rule = Rule {
             false
         }
     },
-    effect: |context, feeder, token| {
+    effect: |context, yard, token| {
         context.active_ruleset = ActiveRuleset::binding;
-        feeder.expression.push(ExprNode::value(token.content.parse()
+        yard.expression.push(ExprNode::value(token.content.parse()
             .map_err(|_| CalcError::invalid_number(token.content.clone()))? ));
         Ok(())
     }
@@ -262,9 +265,9 @@ const operator_placing: Rule = Rule {
     cause: |token| {
         token.kind == TokenKind::operator
     },
-    effect: |_context, feeder, token| {
+    effect: |_context, yard, token| {
         let operator = Function::from_operator(&token.content)?;
-        Ok(feeder.stack.push(StackNode::function(operator)))
+        Ok(yard.stack.push(StackNode::function(operator)))
     }
 };
 
@@ -272,8 +275,8 @@ const paren_placing: Rule = Rule {
     cause: |token| {
         token.content == "("
     },
-    effect: |context, feeder, _token| {
-        feeder.stack.push(StackNode::section(context.enclosure.clone()));
+    effect: |context, yard, _token| {
+        yard.stack.push(StackNode::section(context.enclosure.clone()));
         context.enclose(Enclosure::nested);
         Ok(())
     }
@@ -283,15 +286,15 @@ const paren_binding: Rule = Rule {
     cause: |token| {
         token.content == ")"
     },
-    effect: |context, feeder, _token| {
-        while let Some(node) = feeder.stack.pop() {
+    effect: |context, yard, _token| {
+        while let Some(node) = yard.stack.pop() {
             match node {
                 StackNode::section(enclosure) => {
                     context.enclose(enclosure);
                     break;
                 },
-                StackNode::function(node)  => feeder.expression.push(node.into()),
-                StackNode::binary_function(node) => feeder.expression.push(node.into()),
+                StackNode::function(node)  => yard.expression.push(node.into()),
+                StackNode::binary_function(node) => yard.expression.push(node.into()),
                 _ => (),
             }
         }
@@ -303,14 +306,14 @@ const operator_binding: Rule = Rule {
     cause: |token| {
         token.kind == TokenKind::operator
     },
-    effect: |context, feeder, token| {
+    effect: |context, yard, token| {
         context.active_ruleset = ActiveRuleset::placing;
         let operator = BinaryFunction::from_operator(&token.content)?;
         let precedence = operator.precedence();
-        while let Some(node) = feeder.pop_preceding(&precedence) {
-            feeder.expression.push(node)
+        while let Some(node) = yard.pop_preceding(&precedence) {
+            yard.expression.push(node)
         }
-        Ok(feeder.stack.push(StackNode::binary_function(operator)))
+        Ok(yard.stack.push(StackNode::binary_function(operator)))
     }
 };
 
@@ -318,15 +321,18 @@ const identifier_placing: Rule = Rule {
     cause: |token| {
         token.kind == TokenKind::identifier
     },
-    effect: |context, feeder, token| {
+    effect: |context, yard, token| {
         if let Some(constant) = context.constants.get(&token.content) {
             context.active_ruleset = ActiveRuleset::binding;
-            Ok(feeder.expression.push(ExprNode::value(*constant)))
+            Ok(yard.expression.push(ExprNode::value(*constant)))
+        } else if let Some(variable) = context.variables.get(&token.content) {
+            context.active_ruleset = ActiveRuleset::binding;
+            Ok(yard.expression.push(ExprNode::value(*variable)))
         } else if let Some(function) = Function::from_identifier(&token.content) {
-            Ok(feeder.stack.push(StackNode::function(function)))
+            Ok(yard.stack.push(StackNode::function(function)))
         } else if let Some(function) = VariedFunction::from_identifier(&token.content) {
             context.placing.push(vec![list_placing]);
-            Ok(feeder.stack.push(StackNode::varied_function(function, 0)))
+            Ok(yard.stack.push(StackNode::varied_function(function, 0)))
         } else {
             Err(CalcError::undefined(token.content.clone()))
         }
@@ -337,13 +343,13 @@ const list_placing: Rule = Rule {
     cause: |_token| {
         true
     },
-    effect: |context, feeder, token| {
+    effect: |context, yard, token| {
         if token.content != "(" {
             Err(CalcError::did_not_expect(token.content.clone()))
         } else {
             context.placing.reset();
             context.enclose(Enclosure::listed);
-            Ok(feeder.stack.push(StackNode::section(context.enclosure.clone())))
+            Ok(yard.stack.push(StackNode::section(context.enclosure.clone())))
         }
     }
 };
@@ -352,19 +358,19 @@ const arg_binding: Rule = Rule {
     cause: |token| {
         token.content == ","
     },
-    effect: |context, feeder, _token| {
+    effect: |context, yard, _token| {
         context.active_ruleset = ActiveRuleset::placing;
-        while let Some(node) = feeder.stack.pop() {
+        while let Some(node) = yard.stack.pop() {
             match node {
                 StackNode::section(enclosure) => {
-                    if let Some(StackNode::varied_function(function, count)) = feeder.stack.pop() {
-                        feeder.stack.push(StackNode::varied_function(function, count + 1));
-                        feeder.stack.push(StackNode::section(enclosure));
+                    if let Some(StackNode::varied_function(function, count)) = yard.stack.pop() {
+                        yard.stack.push(StackNode::varied_function(function, count + 1));
+                        yard.stack.push(StackNode::section(enclosure));
                     }
                     break;
                 },
-                StackNode::function(node)  => feeder.expression.push(node.into()),
-                StackNode::binary_function(node) => feeder.expression.push(node.into()),
+                StackNode::function(node)  => yard.expression.push(node.into()),
+                StackNode::binary_function(node) => yard.expression.push(node.into()),
                 _ => (),
             }
         }
@@ -376,21 +382,64 @@ const list_binding: Rule = Rule {
     cause: |token| {
         token.content == ")"
     },
-    effect: |_context, feeder, _token| {
-        while let Some(node) = feeder.stack.pop() {
+    effect: |_context, yard, _token| {
+        while let Some(node) = yard.stack.pop() {
             match node {
                 StackNode::section(_) => {
-                    if let Some(StackNode::varied_function(function, count)) = feeder.stack.pop() {
-                        feeder.expression.push(ExprNode::varied(function, count + 1));
+                    if let Some(StackNode::varied_function(function, count)) = yard.stack.pop() {
+                        yard.expression.push(ExprNode::varied(function, count + 1));
                     }
                     break;
                 },
-                StackNode::function(node)  => feeder.expression.push(node.into()),
-                StackNode::binary_function(node) => feeder.expression.push(node.into()),
+                StackNode::function(node)  => yard.expression.push(node.into()),
+                StackNode::binary_function(node) => yard.expression.push(node.into()),
                 _ => (),
             }
         }
         Ok(())
+    }
+};
+
+const assign_placing: Rule = Rule {
+    cause: |token| {
+        token.kind == TokenKind::identifier
+    },
+    effect: |context, yard, token| {
+        if let Some(constant) = context.constants.get(&token.content) {
+            context.active_ruleset = ActiveRuleset::binding;
+            Ok(yard.expression.push(ExprNode::value(*constant)))
+        } else if let Some(function) = Function::from_identifier(&token.content) {
+            Ok(yard.stack.push(StackNode::function(function)))
+        } else if let Some(function) = VariedFunction::from_identifier(&token.content) {
+            context.placing.push(vec![list_placing]);
+            Ok(yard.stack.push(StackNode::varied_function(function, 0)))
+        } else {
+            context.active_ruleset = ActiveRuleset::binding;
+            context.binding.push(vec![assign_binding]);
+            Ok(yard.stack.push(StackNode::variable(token.content.clone())))
+        }
+    }
+};
+
+const assign_binding: Rule = Rule {
+    cause: |token| {
+        token.kind == TokenKind::operator
+    },
+    effect: |context, yard, token| {
+        if let Some(StackNode::variable(identifier)) = yard.stack.pop() {
+            if token.content == "=" {
+                context.active_ruleset = ActiveRuleset::placing;
+                yard.stack.push(StackNode::assign(identifier));
+                Ok(context.binding.reset())
+            } else if let Some(value) = context.variables.get(&identifier) {
+                yard.expression.push(ExprNode::value(*value));
+                (operator_binding.effect)(context, yard, token)
+            } else {
+                Err(CalcError::undefined(identifier))
+            }
+        } else {
+            panic!("Expected variable at top of stack");
+        }
     }
 };
 
@@ -407,7 +456,8 @@ impl Ruleset {
                     operator_placing,
                     paren_placing,
                     identifier_placing,
-                ]
+                ],
+                vec![assign_placing],
             ]
         }
     }
@@ -450,11 +500,12 @@ enum Enclosure {
     open, nested, listed
 }
 
-struct Context {
+struct Context<'a> {
     placing: Ruleset,
     binding: Ruleset,
     active_ruleset: ActiveRuleset,
     constants: HashMap<String, f32>,
+    variables: &'a mut HashMap<String, f32>,
     enclosure: Enclosure,
 }
 
@@ -465,13 +516,14 @@ fn create_constants() -> HashMap<String, f32> {
     ])
 }
 
-impl Context {
-    fn new() -> Self {
+impl<'a> Context<'a> {
+    fn new(variables: &'a mut HashMap<String, f32>) -> Self {
         Self {
             placing: Ruleset::placing(),
             binding: Ruleset::binding(),
             active_ruleset: ActiveRuleset::placing,
             constants: create_constants(),
+            variables: variables,
             enclosure: Enclosure::open,
         }
     }
@@ -542,19 +594,29 @@ impl Yard {
                 StackNode::section{..} => return Err(CalcError::could_not_find(")".into())),
                 StackNode::function(function) => self.expression.push(function.into()),
                 StackNode::binary_function(function) => self.expression.push(function.into()),
-                _ => panic!("temporary")
+                StackNode::varied_function(..) => panic!("did not expect varied function"),
+                StackNode::variable(identifier) =>
+                    self.expression.push(
+                        ExprNode::value(*context.variables.get(&identifier)
+                            .ok_or_else(|| CalcError::undefined(identifier.clone()))?)),
+                StackNode::assign(identifier) => self.expression.push(ExprNode::assign(identifier)),
             }
         }
         Ok(())
     }
 }
 
-pub fn parse<T: Iterator<Item = Result<Token>>>(scanner: T) -> Result<Vec<ExprNode>> {
+pub fn parse<T: Iterator<Item = Result<Token>>>(scanner: T, variables: &mut HashMap<String, f32>) -> Result<Vec<ExprNode>> {
     let mut yard = Yard::new();
-    let mut context = Context::new();
+    let mut context = Context::new(variables);
 
+    let mut is_first_token = true;
     for token in scanner {
         context.apply(&mut yard, token?)?;
+        if is_first_token {
+            context.placing.reset();
+            is_first_token = false;
+        }
     }
     yard.finalize(&context)?;
 
